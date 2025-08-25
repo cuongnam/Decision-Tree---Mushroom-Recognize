@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>🍄 Dự đoán nấm: Odor + Cap-Color + Gill-Color</title>
+  <style>
+    :root { --bg:#0f172a; --card:#111827; --muted:#94a3b8; --text:#e5e7eb; --accent:#22c55e; --danger:#ef4444; }
+    *{box-sizing:border-box} body{margin:0;background:linear-gradient(120deg,#0b1023,#0f172a);font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:var(--text)}
+    .wrap{max-width:900px;margin:24px auto;padding:16px}
+    .card{background:rgba(17,24,39,.8);backdrop-filter: blur(8px);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:20px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+    h1{margin:0 0 8px;font-size:28px}
+    p.lead{margin:0 0 18px;color:var(--muted)}
+    .grid{display:grid;grid-template-columns:1fr;gap:14px}
+    @media (min-width:720px){.grid{grid-template-columns:repeat(3,1fr)}}
+    label{display:block;font-weight:600;margin-bottom:8px}
+    select, input[type="file"]{width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.1);background:#0b1222;color:var(--text)}
+    .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+    .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.1);background:#1f2937;color:var(--text);cursor:pointer;font-weight:600}
+    .btn:hover{background:#111827}
+    .btn-primary{background:#16a34a;border-color:#16a34a}
+    .btn-primary:hover{background:#15803d}
+    .status{font-size:14px;color:var(--muted)}
+    .result{margin-top:16px;padding:14px 16px;border-radius:12px;border:1px dashed rgba(255,255,255,.15);display:flex;justify-content:space-between;align-items:center}
+    .badge{padding:6px 10px;border-radius:999px;font-weight:700}
+    .ok{background:rgba(34,197,94,.15);color:#86efac;border:1px solid rgba(34,197,94,.35)}
+    .bad{background:rgba(239,68,68,.15);color:#fecaca;border:1px solid rgba(239,68,68,.35)}
+    .warn{background:rgba(234,179,8,.15);color:#fde68a;border:1px solid rgba(234,179,8,.35)}
+    .hint{font-size:12px;color:var(--muted);margin-top:8px}
+    details{margin-top:16px;color:var(--muted)}
+    code,kbd{background:#0b1222;border:1px solid rgba(255,255,255,.1);padding:2px 6px;border-radius:6px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>🍄 Dự đoán nấm (3 thuộc tính)</h1>
+      <p class="lead">Chọn <strong>mùi (odor)</strong>, <strong>màu mũ (cap-color)</strong>, <strong>màu phiến (gill-color)</strong> và tải mô hình cây quyết định (định dạng JSON) để dự đoán <em>edible</em> hay <em>poisonous</em>.</p>
+
+      <div class="row" style="margin: 10px 0 18px">
+        <label for="modelFile" class="status">📦 Mô hình: <span id="modelStatus">chưa tải</span></label>
+        <input id="modelFile" type="file" accept="application/json" />
+        <button class="btn" id="btnSample">Dán JSON mẫu</button>
+      </div>
+
+      <div class="grid">
+        <div>
+          <label for="odor">Mùi (odor)</label>
+          <select id="odor">
+            <option value="">— Chọn mùi —</option>
+          </select>
+          <div class="hint">Mã → mô tả. Ví dụ: <kbd>n</kbd> = không mùi (none)</div>
+        </div>
+        <div>
+          <label for="cap">Màu mũ nấm (cap-color)</label>
+          <select id="cap">
+            <option value="">— Chọn màu mũ —</option>
+          </select>
+        </div>
+        <div>
+          <label for="gill">Màu phiến nấm (gill-color)</label>
+          <select id="gill">
+            <option value="">— Chọn màu phiến —</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:18px">
+        <button class="btn btn-primary" id="predictBtn">🔮 Dự đoán</button>
+        <button class="btn" id="resetBtn">↺ Xóa chọn</button>
+      </div>
+
+      <div id="result" class="result" style="display:none">
+        <div id="resultText">Kết quả…</div>
+        <div id="resultBadge" class="badge"></div>
+      </div>
+
+
+    </div>
+  </div>
+
+  <script>
+    // --- Danh sách giá trị (mã → mô tả) ---
+    const odorMap = {
+      a: 'a - hạnh nhân (almond)', l: 'l - hồi (anise)', c: 'c - creosote (nhựa gỗ)',
+      y: 'y - cá (fishy)', f: 'f - hôi (foul)', m: 'm - mốc (musty)',
+      n: 'n - không mùi (none)', p: 'p - cay (pungent)', s: 's - cay nồng (spicy)'
+    };
+    const capMap = {
+      n: 'n - nâu (brown)', b: 'b - be (buff)', c: 'c - quế (cinnamon)', g: 'g - xám (gray)',
+      r: 'r - xanh lục (green)', p: 'p - hồng (pink)', u: 'u - tím (purple)', e: 'e - đỏ (red)',
+      w: 'w - trắng (white)', y: 'y - vàng (yellow)'
+    };
+    const gillMap = {
+      k: 'k - đen (black)', n: 'n - nâu (brown)', b: 'b - be (buff)', h: 'h - chocolate',
+      g: 'g - xám (gray)', r: 'r - xanh lục (green)', o: 'o - cam (orange)', p: 'p - hồng (pink)',
+      u: 'u - tím (purple)', e: 'e - đỏ (red)', w: 'w - trắng (white)', y: 'y - vàng (yellow)'
+    };
+
+    // --- Tiện ích DOM ---
+    const $ = (s) => document.querySelector(s);
+    const odorSel = $('#odor');
+    const capSel  = $('#cap');
+    const gillSel = $('#gill');
+    const resBox  = $('#result');
+    const resText = $('#resultText');
+    const resBadge= $('#resultBadge');
+    const modelStatus = $('#modelStatus');
+
+    function fillOptions(select, map){
+      for(const [val, label] of Object.entries(map)){
+        const opt = document.createElement('option');
+        opt.value = val; opt.textContent = label; select.appendChild(opt);
+      }
+    }
+    fillOptions(odorSel, odorMap);
+    fillOptions(capSel, capMap);
+    fillOptions(gillSel, gillMap);
+
+    // --- Model (Decision Tree) ---
+    // Sẽ được nạp từ .json do người dùng chọn
+    let modelTree = null;
+
+    // Tải JSON từ input file
+    document.getElementById('modelFile').addEventListener('change', async (e)=>{
+      const file = e.target.files?.[0];
+      if(!file){ modelStatus.textContent = 'chưa tải'; modelTree = null; return; }
+      try{
+        const text = await file.text();
+        const obj = JSON.parse(text);
+        if(typeof obj !== 'object' || obj === null) throw new Error('JSON không hợp lệ');
+        modelTree = obj;
+        modelStatus.textContent = `đã tải: ${file.name}`;
+        modelStatus.style.color = '#86efac';
+      }catch(err){
+        modelTree = null;
+        modelStatus.textContent = 'lỗi khi tải mô hình';
+        modelStatus.style.color = '#fecaca';
+        alert('Không thể đọc mô hình JSON: ' + err.message);
+      }
+    });
+
+    // Dán JSON mẫu (chỉ để thử UI). Bạn nên thay bằng mô hình thật.
+    document.getElementById('btnSample').addEventListener('click', ()=>{
+      // Ví dụ một cây rất nhỏ (KHÔNG phải mô hình chính xác). Chỉ minh họa cấu trúc.
+      modelTree = {
+        "odor": {
+          "n": { "cap-color": { "w": "e", "y": "p", "n": "e" } },
+          "f": "p",
+          "y": "p",
+          "p": "p",
+          "a": { "gill-color": { "k": "p", "w": "e" } }
+        }
+      };
+      modelStatus.textContent = 'đã nạp JSON mẫu (demo)';
+      modelStatus.style.color = '#fde68a';
+      alert('Đã nạp cây mẫu demo. Hãy dùng mô hình thật (.json) để có độ chính xác cao.');
+    });
+
+    // --- Hàm dự đoán (đệ quy) ---
+    function predict(tree, sample){
+      if(tree === null || typeof tree !== 'object') return tree; // leaf
+      const feature = Object.keys(tree)[0];
+      const branches = tree[feature];
+      const value = sample[feature];
+      if(Object.prototype.hasOwnProperty.call(branches, value)){
+        return predict(branches[value], sample);
+      } else {
+        return 'unknown';
+      }
+    }
+
+    // --- Xử lý nút Dự đoán ---
+    document.getElementById('predictBtn').addEventListener('click', ()=>{
+      if(!modelTree){ alert('Vui lòng tải mô hình (.json) trước.'); return; }
+      const odor = odorSel.value, cap = capSel.value, gill = gillSel.value;
+      if(!odor || !cap || !gill){ alert('Vui lòng chọn đủ 3 thuộc tính.'); return; }
+
+      const sample = { 'odor': odor, 'cap-color': cap, 'gill-color': gill };
+      const yhat = predict(modelTree, sample);
+
+      let text = '⚠️ Không xác định';
+      let cls  = 'warn';
+      if(yhat === 'e'){ text = '🍄 Nấm ăn được (Edible)'; cls='ok'; }
+      else if(yhat === 'p'){ text = '☠️ Nấm độc (Poisonous)'; cls='bad'; }
+
+      resText.textContent = text;
+      resBadge.className = 'badge ' + cls;
+      resBadge.textContent = (yhat||'unknown').toString();
+      resBox.style.display = 'flex';
+    });
+
+    document.getElementById('resetBtn').addEventListener('click', ()=>{
+      odorSel.value = capSel.value = gillSel.value = '';
+      resBox.style.display = 'none';
+    });
+  </script>
+</body>
+</html>
